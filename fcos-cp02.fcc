@@ -2,13 +2,6 @@ variant: fcos
 version: 1.2.0
 systemd:
   units:
-  - name: getty@tty1.service
-    dropins:
-    - name: autologin-core.conf
-      contents: |
-        [Service]
-        ExecStart=
-        ExecStart=-/usr/sbin/agetty --autologin core --noclear %I $TERM
   - name: run-k3s-prereq-installer.service
     enabled: true
     contents: |
@@ -63,6 +56,32 @@ storage:
           # Raise console message logging level from DEBUG (7) to WARNING (4)
           # to hide audit messages from the interactive console
           kernel.printk=4
+    - path: /var/lib/rancher/k3s/server/manifests/keepalived-api-vip.yaml
+      mode: 0644
+      contents:
+        inline: |
+          apiVersion: helm.cattle.io/v1
+          kind: HelmChart
+          metadata:
+            name: keepalived-ingress-vip
+            namespace: kube-system
+          spec:
+            chart: keepalived-ingress-vip
+            version: v0.1.6
+            repo: https://janeczku.github.io/helm-charts/
+            targetNamespace: kube-system
+            valuesContent: |-
+              keepalived:
+                vrrpInterfaceName: enp1s0
+                vipInterfaceName: enp1s0
+                vipAddressCidr: "192.168.10.200/24"
+                checkServiceUrl: https://127.0.0.1:6443/healthz
+                checkKubelet: false
+                checkKubeApi: false
+              kind: Daemonset
+              pod:
+                nodeSelector:
+                  node-role.kubernetes.io/master: "true"
     - path: /usr/local/bin/run-k3s-prereq-installer
       mode: 0755
       contents:
@@ -81,7 +100,7 @@ storage:
           main() {
             export K3S_KUBECONFIG_MODE="644"
             export K3S_TOKEN="very_secret"
-            export INSTALL_K3S_EXEC="server --server https://192.168.178.94:6443"
+            export INSTALL_K3S_EXEC="server --server https://192.168.10.200:6443"
 
             curl -sfL https://get.k3s.io | sh -
             return 0
