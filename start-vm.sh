@@ -1,4 +1,12 @@
 #!/bin/sh
+
+#
+# TODO:
+# - virsh net-define virsh-net-kubernetes.yaml
+# - virsh net-autostart kubenet
+# - virsh net-start kubenet
+# - possibly destroy/undefine/remove storage of VM
+
 help() {
 	echo "Usage: $(basename $0) <.ign> [<qcow> [<vmname> [<vcpu> [<ram> [<disk>]]]]]"
 	exit 1
@@ -18,12 +26,14 @@ echo Using ignition config ${IGNITION_CONFIG}
 STREAM="stable"
 IMAGE=$(readlink -f ${2:-./images/$(ls -t ./images | head -n 1)})
 VM_NAME=${3:-$(basename ${FCC%.*})}
+NETWORK="kubenet"
 VCPUS=${4:-2}
 RAM_MB=${5:-2048}
 DISK_GB=${6:-20}
 
 sudo virt-install --connect="qemu:///system" --name="${VM_NAME}" \
 	--vcpus="${VCPUS}" --memory="${RAM_MB}" \
+	--network="network=${NETWORK}" \
         --os-variant="fedora-coreos-${STREAM}" --import --graphics=none \
         --disk="size=${DISK_GB},backing_store=${IMAGE}" \
         --qemu-commandline="-fw_cfg name=opt/com.coreos/config,file=${IGNITION_CONFIG}"
