@@ -1,3 +1,5 @@
 ignition/*
 images/*
 kubectl
+terraform/.terraform*
+terraform/*.tfstate*
