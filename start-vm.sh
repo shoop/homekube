@@ -1,7 +1,9 @@
-#!/bin/sh
+#!/bin/sh -x
 
 #
 # TODO:
+# - generate MAC:
+# echo 'import random ; print("52:54:00:%02x:%02x:%02x" % (random.randint(0,255), random.randint(0,255), random.randint(0,255)))' | python
 # - virsh net-define virsh-net-kubernetes.yaml
 # - virsh net-autostart kubenet
 # - virsh net-start kubenet
