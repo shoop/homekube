@@ -48,7 +48,7 @@ storage:
       mode: 0644
       contents:
         inline: |
-          cp02.local
+          cp02.kube.home.arpa
     - path: /etc/sysctl.d/20-silence-audit.conf
       mode: 0644
       contents:
