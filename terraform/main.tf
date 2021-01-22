@@ -281,7 +281,7 @@ data "ignition_file" "cp_run_k3s_installer" {
         export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${var.cp_keepalived_vip}"
         %{ else ~}
         export INSTALL_K3S_EXEC="server --server https://${var.cp_keepalived_vip}:6443"
-        while [ -z "$( socat -T2 stdout tcp:${var.cp_keepalived_vip}:6443,connect-timeout=2,readbytes=1 2>/dev/null )" ]; do echo "${var.cp_keepalived_vip}:6443 not up, sleeping..."; sleep 5; done
+        while curl --connect-timeout 0.1 -s https://${var.cp_keepalived_vip}:6443 ; [ $? -eq 28 ] ; do echo "${var.cp_keepalived_vip}:6443 not up, sleeping..."; sleep 5; done
         %{ endif ~}
 
         curl -sfL https://get.k3s.io | sh -
