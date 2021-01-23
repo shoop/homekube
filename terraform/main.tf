@@ -219,6 +219,24 @@ data "ignition_file" "silence_audit_conf" {
   }
 }
 
+# TODO: change this to fleet_lock once we can confirm that it will run at cluster init
+data "ignition_file" "zincati_update_strategy" {
+  count = var.cp_count
+  path = "/etc/zincati/config.d/90-update-strategy"
+  mode = 420
+  content {
+    content = <<-EOT
+      [updates]
+      strategy = "periodic"
+
+      [[updates.periodic.window]]
+      days = [ "Sat", "Sun" ]
+      start_time = "23:30"
+      length_minutes = 60
+    EOT
+  }
+}
+
 data "ignition_file" "k3s_manifest_keepalived_api_vip_yaml" {
   count = var.cp_count
   path = "/var/lib/rancher/k3s/server/manifests/keepalived-api-vip.yaml"
@@ -308,7 +326,8 @@ data "ignition_config" "cp_ignition_config" {
     data.ignition_file.silence_audit_conf[count.index].rendered,
     data.ignition_file.k3s_manifest_keepalived_api_vip_yaml[count.index].rendered,
     data.ignition_file.cp_run_k3s_prereq_installer[count.index].rendered,
-    data.ignition_file.cp_run_k3s_installer[count.index].rendered
+    data.ignition_file.cp_run_k3s_installer[count.index].rendered,
+    data.ignition_file.zincati_update_strategy[count.index].rendered
   ]
   users = [
     data.ignition_user.cp_core.rendered
