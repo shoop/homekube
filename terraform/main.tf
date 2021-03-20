@@ -23,7 +23,7 @@ variable "virt_network_name" {
 
 variable "virt_network_mode" {
   type = string
-  default = "nat"
+  default = "route"
 }
 
 variable "virt_network_bridge_name" {
@@ -33,7 +33,7 @@ variable "virt_network_bridge_name" {
 
 variable "virt_network_dns_suffix" {
   type = string
-  default = "kube.home.arpa"
+  default = "kube.home"
 }
 
 variable "virt_network_cidr" {
@@ -59,8 +59,6 @@ variable "cp_hostname_format" {
 
 variable "cp_interface_name" {
   type = string
-  # TODO: check why this was enp1s0 using start-vm.sh script
-  #default = "enp1s0"
   default = "ens3"
   description = "Interface name inside the control plane VM"
 }
@@ -103,6 +101,10 @@ variable "admin_ssh_authorized_keys" {
   description = "The authorized key(s) for the administrative user(s) of the cluster"
 }
 
+locals {
+  dns_apiserver = "apiserver.${var.virt_network_dns_suffix}"
+}
+
 resource "libvirt_network" "kubenet" {
   name = var.virt_network_name
   mode = var.virt_network_mode
@@ -113,6 +115,24 @@ resource "libvirt_network" "kubenet" {
 
   dns {
     enabled = true
+
+    hosts {
+      hostname = "router.${var.virt_network_dns_suffix}"
+      ip = "192.168.10.1"
+    }
+
+    hosts {
+      hostname = local.dns_apiserver
+      ip = var.cp_keepalived_vip
+    }
+
+    dynamic "hosts" {
+      for_each = range(var.cp_count)
+      content {
+        hostname = "${format(var.cp_hostname_format, hosts.value + 1)}.${var.virt_network_dns_suffix}"
+        ip = "192.168.10.${format("%d", 200 + hosts.value + 1)}"
+      }
+    }
   }
 
   dhcp {
@@ -222,7 +242,7 @@ data "ignition_file" "silence_audit_conf" {
 # TODO: change this to fleet_lock once we can confirm that it will run at cluster init
 data "ignition_file" "zincati_update_strategy" {
   count = var.cp_count
-  path = "/etc/zincati/config.d/90-update-strategy"
+  path = "/etc/zincati/config.d/90-update-strategy.toml"
   mode = 420
   content {
     content = <<-EOT
@@ -230,8 +250,8 @@ data "ignition_file" "zincati_update_strategy" {
       strategy = "periodic"
 
       [[updates.periodic.window]]
-      days = [ "Sat", "Sun" ]
-      start_time = "23:30"
+      days = [ "Mon" ]
+      start_time = "04:00"
       length_minutes = 60
     EOT
   }
@@ -296,10 +316,12 @@ data "ignition_file" "cp_run_k3s_installer" {
         export K3S_KUBECONFIG_MODE="644"
         export K3S_TOKEN="very_secret"
         %{ if count.index == 0 ~}
-        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${var.cp_keepalived_vip}"
+        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)}"
         %{ else ~}
-        export INSTALL_K3S_EXEC="server --server https://${var.cp_keepalived_vip}:6443"
-        while curl --connect-timeout 0.1 -s https://${var.cp_keepalived_vip}:6443 ; [ $? -eq 28 ] ; do echo "${var.cp_keepalived_vip}:6443 not up, sleeping..."; sleep 5; done
+        export INSTALL_K3S_EXEC="server --server https://${local.dns_apiserver}:6443 --node-name ${format(var.cp_hostname_format, count.index + 1)}"
+        while curl --connect-timeout 0.1 -s https://${local.dns_apiserver}:6443 ; [ $? -eq 28 ] ; do echo "${local.dns_apiserver}:6443 not up, sleeping..."; sleep 5; done
+        # Sleep a while to avoid 2 etcd learners joining at the same time
+        sleep ${count.index * 25}
         %{ endif ~}
 
         curl -sfL https://get.k3s.io | sh -
@@ -364,6 +386,7 @@ resource "libvirt_domain" "cp_vm" {
   network_interface {
     network_id = libvirt_network.kubenet.id
     hostname = format(var.cp_hostname_format, count.index + 1)
+    addresses = [ "192.168.10.${format("%d", 200 + count.index + 1)}" ]
     wait_for_lease = true
   }
   graphics {
