@@ -7,7 +7,7 @@ terraform {
     }
     ignition = {
       source = "community-terraform-providers/ignition"
-      version = "2.1.1"
+      version = "2.1.2"
     }
   }
 }
@@ -217,6 +217,14 @@ data "ignition_systemd_unit" "run_k3s_installer" {
   EOT
 }
 
+# Mask docker to avoid it inserting iptables chains in the middle.
+data "ignition_systemd_unit" "mask_docker" {
+  count = var.cp_count
+  name = "docker.service"
+  mask = true
+  enabled = false
+}
+
 data "ignition_file" "etc_hostname" {
   count = var.cp_count
   path = "/etc/hostname"
@@ -316,18 +324,53 @@ data "ignition_file" "cp_run_k3s_installer" {
         export K3S_KUBECONFIG_MODE="644"
         export K3S_TOKEN="very_secret"
         %{ if count.index == 0 ~}
-        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)}"
+        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)} --disable=traefik --flannel-backend=none --disable-network-policy --cluster-cidr=10.42.0.0/16"
         %{ else ~}
-        export INSTALL_K3S_EXEC="server --server https://${local.dns_apiserver}:6443 --node-name ${format(var.cp_hostname_format, count.index + 1)}"
+        export INSTALL_K3S_EXEC="server --server https://${local.dns_apiserver}:6443 --node-name ${format(var.cp_hostname_format, count.index + 1)} --disable traefik"
         while curl --connect-timeout 0.1 -s https://${local.dns_apiserver}:6443 ; [ $? -eq 28 ] ; do echo "${local.dns_apiserver}:6443 not up, sleeping..."; sleep 5; done
+        echo "${local.dns_apiserver}:6443 up. Avoiding etcd join race..."
         # Sleep a while to avoid 2 etcd learners joining at the same time
         sleep ${count.index * 25}
         %{ endif ~}
 
+        echo "Starting k3s install..."
         curl -sfL https://get.k3s.io | sh -
         return 0
       }
       main
+    EOT
+  }
+}
+
+data "ignition_file" "cp_install_calico_operator" {
+  path = "/usr/local/bin/calico_operator.yaml"
+  mode = 420
+  source {
+    source = "https://docs.projectcalico.org/manifests/tigera-operator.yaml"
+  }
+}
+
+data "ignition_file" "cp_install_calico_resources" {
+  path = "/usr/local/bin/calico_resources.yaml"
+  mode = 420
+  content {
+    content = <<-EOT
+      # This section includes base Calico installation configuration.
+      # For more information, see: https://docs.projectcalico.org/v3.18/reference/installation/api#operator.tigera.io/v1.Installation
+      apiVersion: operator.tigera.io/v1
+      kind: Installation
+      metadata:
+        name: default
+      spec:
+        # Configures Calico networking.
+        calicoNetwork:
+          # Note: The ipPools section cannot be modified post-install.
+          ipPools:
+          - blockSize: 26
+            cidr: 10.42.0.0/16
+            encapsulation: VXLANCrossSubnet
+            natOutgoing: Enabled
+            nodeSelector: all()
     EOT
   }
 }
@@ -342,15 +385,20 @@ data "ignition_config" "cp_ignition_config" {
   systemd = [
     data.ignition_systemd_unit.run_k3s_prereq_installer[count.index].rendered,
     data.ignition_systemd_unit.run_k3s_installer[count.index].rendered,
+    data.ignition_systemd_unit.mask_docker[count.index].rendered,
   ]
-  files = [
-    data.ignition_file.etc_hostname[count.index].rendered,
-    data.ignition_file.silence_audit_conf[count.index].rendered,
-    data.ignition_file.k3s_manifest_keepalived_api_vip_yaml[count.index].rendered,
-    data.ignition_file.cp_run_k3s_prereq_installer[count.index].rendered,
-    data.ignition_file.cp_run_k3s_installer[count.index].rendered,
-    data.ignition_file.zincati_update_strategy[count.index].rendered
-  ]
+  files = concat([
+      data.ignition_file.etc_hostname[count.index].rendered,
+      data.ignition_file.silence_audit_conf[count.index].rendered,
+      data.ignition_file.k3s_manifest_keepalived_api_vip_yaml[count.index].rendered,
+      data.ignition_file.cp_run_k3s_prereq_installer[count.index].rendered,
+      data.ignition_file.cp_run_k3s_installer[count.index].rendered,
+      data.ignition_file.zincati_update_strategy[count.index].rendered
+    ],
+    count.index == 0 ? [
+      data.ignition_file.cp_install_calico_operator.rendered,
+      data.ignition_file.cp_install_calico_resources.rendered
+    ] : [])
   users = [
     data.ignition_user.cp_core.rendered
   ]
@@ -365,7 +413,7 @@ resource "libvirt_ignition" "cp_vm_ignition_config" {
 resource "libvirt_volume" "fcos_base_image" {
   name = "fedora_coreos_stable"
   # TODO: generic
-  source = "../images/fedora-coreos-33.20201214.3.1-qemu.x86_64.qcow2"
+  source = "../images/fedora-coreos-33.20210301.3.1-qemu.x86_64.qcow2"
 }
 
 resource "libvirt_volume" "cp_disk" {
