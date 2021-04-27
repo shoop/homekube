@@ -46,15 +46,21 @@ variable "virt_network_dhcp_endrange" {
   default = "192.168.10.199"
 }
 
-# Already tested:
 # --flannel-backend=vxlan (default)
-#    Does not work for some reason
+#    Does not work for some reason, TBD
 # --flannel-backend=host-gw
-#    Works but requires routing ?
-# Wanted: Calico for network policy so disable builtin flannel
-variable "cni_args" {
+#    Works but requires extra routing setup I do not want
+# --flannel-backend=none --disable-network-policy
+#    Post-setup install Calico for network policy so disable
+#    builtin flannel and builtin network policy
+variable "cni_backend_args" {
   type = string
-  default = "--flannel-backend=none"
+  default = "--flannel-backend=none --disable-network-policy"
+}
+
+variable "cni_cluster_cidr" {
+  type = string
+  default = "10.42.0.0/16"
 }
 
 variable "cp_count" {
@@ -344,13 +350,19 @@ data "ignition_file" "cp_run_k3s_installer" {
         export K3S_KUBECONFIG_MODE="644"
         export K3S_TOKEN="very_secret"
         %{ if count.index == 0 ~}
-        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)} --disable=traefik ${var.cni_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
+        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
         %{ else ~}
-        export INSTALL_K3S_EXEC="server --server https://${local.dns_apiserver}:6443 --node-name ${format(var.cp_hostname_format, count.index + 1)} --disable=traefik ${var.cni_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
+        export INSTALL_K3S_EXEC="server --server https://${local.dns_apiserver}:6443 --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
         while curl --connect-timeout 0.1 -s https://${local.dns_apiserver}:6443 ; [ $? -eq 28 ] ; do echo "${local.dns_apiserver}:6443 not up, sleeping..."; sleep 5; done
         echo "${local.dns_apiserver}:6443 up. Avoiding etcd join race..."
         # Sleep a while to avoid 2 etcd learners joining at the same time
         sleep ${(count.index - 1) * 25}
+        %{ endif ~}
+
+        sed -i -e 's/cidr: .*/cidr: 10.42.0.0\/16/' -e '/ipPools:/i \ \ \ \ containerIPForwarding: Enabled' -e '/calicoNetwork:/i \ \ flexVolumePath: /etc/kubernetes/kubelet-plugins/volume/exec' /etc/kubernetes/calico-install/calico-custom-resources.yaml
+        %{ if count.index == 0 ~}
+        cp /etc/kubernetes/calico-install/tigera-operator.yaml /var/lib/rancher/k3s/server/manifests/00-tigera-operator.yaml
+        cp /etc/kubernetes/calico-install/calico-custom-resources.yaml /var/lib/rancher/k3s/server/manifests/99-calico-custom-resources.yaml
         %{ endif ~}
 
         echo "Starting k3s install..."
@@ -367,19 +379,21 @@ data "ignition_user" "cp_core" {
   ssh_authorized_keys = var.admin_ssh_authorized_keys
 }
 
+# TODO: only on first cp
 data "ignition_file" "calico_operator" {
   count = var.cp_count
-  path = "/srv/tigera_operator.yaml"
+  path = "/etc/kubernetes/calico-install/tigera-operator.yaml"
   mode = 420
   source {
     source = "https://docs.projectcalico.org/manifests/tigera-operator.yaml"
-    verification = "sha512-41112cf29a84dc2e0dd22321b9565b7a93dd1ce2d340432fb931459a5cf7a19245779e196a76393cdb5fc4506787ca3d4a87497ec2721658369031f23c473207"
+    verification = "sha512-99d8880d925dd3fc89520e13dff36c97d677a82968bfa4037f2af653be1da18c1ce689f1a9cb08280ea96b43605d7b05d110ea70a809d2c3dcc3f04fdd712268"
   }
 }
 
+# TODO: only on first cp
 data "ignition_file" "calico_resources" {
   count = var.cp_count
-  path = "/srv/calico-custom-resources.yaml"
+  path = "/etc/kubernetes/calico-install/calico-custom-resources.yaml"
   mode = 420
   source {
     source = "https://docs.projectcalico.org/manifests/custom-resources.yaml"
