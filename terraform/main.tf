@@ -46,6 +46,17 @@ variable "virt_network_dhcp_endrange" {
   default = "192.168.10.199"
 }
 
+# Already tested:
+# --flannel-backend=vxlan (default)
+#    Does not work for some reason
+# --flannel-backend=host-gw
+#    Works but requires routing ?
+# Wanted: Calico for network policy so disable builtin flannel
+variable "cni_args" {
+  type = string
+  default = "--flannel-backend=none"
+}
+
 variable "cp_count" {
   type = number
   default = 3
@@ -225,6 +236,15 @@ data "ignition_systemd_unit" "mask_docker" {
   enabled = false
 }
 
+# Mask zincati for now as we cannot control staging of new image
+# and rpm-ostree install defaults to the new image
+data "ignition_systemd_unit" "mask_zincati" {
+  count = var.cp_count
+  name = "zincati.service"
+  mask = true
+  enabled = false
+}
+
 data "ignition_file" "etc_hostname" {
   count = var.cp_count
   path = "/etc/hostname"
@@ -305,7 +325,7 @@ data "ignition_file" "cp_run_k3s_prereq_installer" {
     content = <<-EOT
       #!/usr/bin/env sh
       main() {
-        rpm-ostree install https://github.com/k3s-io/k3s-selinux/releases/download/v0.2.stable.1/k3s-selinux-0.2-1.el7_8.noarch.rpm
+        rpm-ostree install https://github.com/k3s-io/k3s-selinux/releases/download/v0.3.stable.0/k3s-selinux-0.3-0.el7.noarch.rpm
         return 0
       }
       main    
@@ -324,13 +344,13 @@ data "ignition_file" "cp_run_k3s_installer" {
         export K3S_KUBECONFIG_MODE="644"
         export K3S_TOKEN="very_secret"
         %{ if count.index == 0 ~}
-        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)} --disable=traefik"
+        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)} --disable=traefik ${var.cni_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
         %{ else ~}
-        export INSTALL_K3S_EXEC="server --server https://${local.dns_apiserver}:6443 --node-name ${format(var.cp_hostname_format, count.index + 1)} --disable=traefik"
+        export INSTALL_K3S_EXEC="server --server https://${local.dns_apiserver}:6443 --node-name ${format(var.cp_hostname_format, count.index + 1)} --disable=traefik ${var.cni_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
         while curl --connect-timeout 0.1 -s https://${local.dns_apiserver}:6443 ; [ $? -eq 28 ] ; do echo "${local.dns_apiserver}:6443 not up, sleeping..."; sleep 5; done
         echo "${local.dns_apiserver}:6443 up. Avoiding etcd join race..."
         # Sleep a while to avoid 2 etcd learners joining at the same time
-        sleep ${count.index * 25}
+        sleep ${(count.index - 1) * 25}
         %{ endif ~}
 
         echo "Starting k3s install..."
@@ -347,12 +367,33 @@ data "ignition_user" "cp_core" {
   ssh_authorized_keys = var.admin_ssh_authorized_keys
 }
 
+data "ignition_file" "calico_operator" {
+  count = var.cp_count
+  path = "/srv/tigera_operator.yaml"
+  mode = 420
+  source {
+    source = "https://docs.projectcalico.org/manifests/tigera-operator.yaml"
+    verification = "sha512-41112cf29a84dc2e0dd22321b9565b7a93dd1ce2d340432fb931459a5cf7a19245779e196a76393cdb5fc4506787ca3d4a87497ec2721658369031f23c473207"
+  }
+}
+
+data "ignition_file" "calico_resources" {
+  count = var.cp_count
+  path = "/srv/calico-custom-resources.yaml"
+  mode = 420
+  source {
+    source = "https://docs.projectcalico.org/manifests/custom-resources.yaml"
+    verification = "sha512-d01791d8648467126c735581f17a00cfd508102dba09b9c2b0a408423c097557d844f9184a7bb5cc119040567bbe435950630189db309847a1282f59ddecaae7"
+  }
+}
+
 data "ignition_config" "cp_ignition_config" {
   count = var.cp_count
   systemd = [
     data.ignition_systemd_unit.run_k3s_prereq_installer[count.index].rendered,
     data.ignition_systemd_unit.run_k3s_installer[count.index].rendered,
     data.ignition_systemd_unit.mask_docker[count.index].rendered,
+    data.ignition_systemd_unit.mask_zincati[count.index].rendered,
   ]
   files = [
     data.ignition_file.etc_hostname[count.index].rendered,
@@ -361,6 +402,8 @@ data "ignition_config" "cp_ignition_config" {
     data.ignition_file.cp_run_k3s_prereq_installer[count.index].rendered,
     data.ignition_file.cp_run_k3s_installer[count.index].rendered,
     data.ignition_file.zincati_update_strategy[count.index].rendered,
+    data.ignition_file.calico_operator[count.index].rendered,
+    data.ignition_file.calico_resources[count.index].rendered,
   ]
   users = [
     data.ignition_user.cp_core.rendered,
