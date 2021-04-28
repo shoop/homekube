@@ -359,7 +359,7 @@ data "ignition_file" "cp_run_k3s_installer" {
         sleep ${(count.index - 1) * 25}
         %{ endif ~}
 
-        sed -i -e 's/cidr: .*/cidr: 10.42.0.0\/16/' -e '/ipPools:/i \ \ \ \ containerIPForwarding: Enabled' -e '/calicoNetwork:/i \ \ flexVolumePath: /etc/kubernetes/kubelet-plugins/volume/exec' /etc/kubernetes/calico-install/calico-custom-resources.yaml
+        sed -i -e 's#cidr: .*#cidr: ${var.cni_cluster_cidr}#' -e '/ipPools:/i \ \ \ \ containerIPForwarding: Enabled' -e '/calicoNetwork:/i \ \ flexVolumePath: /etc/kubernetes/kubelet-plugins/volume/exec' /etc/kubernetes/calico-install/calico-custom-resources.yaml
         %{ if count.index == 0 ~}
         cp /etc/kubernetes/calico-install/tigera-operator.yaml /var/lib/rancher/k3s/server/manifests/00-tigera-operator.yaml
         cp /etc/kubernetes/calico-install/calico-custom-resources.yaml /var/lib/rancher/k3s/server/manifests/99-calico-custom-resources.yaml
