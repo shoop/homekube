@@ -98,7 +98,7 @@ variable "cp_disk_gb" {
   description = "The amount of storage in GB to allocate for the control plane VM"
 }
 
-variable "cp_keepalived_vip" {
+variable "cp_keepalived_api_vip" {
   type = string
   default = "192.168.10.200"
   description = "The virtual IP that keepalived will assign to an accessible control plane node"
@@ -140,7 +140,7 @@ resource "libvirt_network" "kubenet" {
 
     hosts {
       hostname = local.dns_apiserver
-      ip = var.cp_keepalived_vip
+      ip = var.cp_keepalived_api_vip
     }
 
     dynamic "hosts" {
@@ -300,7 +300,7 @@ data "ignition_file" "k3s_manifest_keepalived_api_vip_yaml" {
       apiVersion: helm.cattle.io/v1
       kind: HelmChart
       metadata:
-        name: keepalived-ingress-vip
+        name: keepalived-api-vip
         namespace: kube-system
       spec:
         chart: keepalived-ingress-vip
@@ -311,7 +311,7 @@ data "ignition_file" "k3s_manifest_keepalived_api_vip_yaml" {
           keepalived:
             vrrpInterfaceName: ${var.cp_interface_name}
             vipInterfaceName: ${var.cp_interface_name}
-            vipAddressCidr: "${var.cp_keepalived_vip}/${var.cp_keepalived_subnet_size}"
+            vipAddressCidr: "${var.cp_keepalived_api_vip}/${var.cp_keepalived_subnet_size}"
             checkServiceUrl: https://127.0.0.1:6443/healthz
             checkKubelet: false
             checkKubeApi: false
@@ -350,7 +350,7 @@ data "ignition_file" "cp_run_k3s_installer" {
         export K3S_KUBECONFIG_MODE="644"
         export K3S_TOKEN="very_secret"
         %{ if count.index == 0 ~}
-        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
+        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_api_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
         %{ else ~}
         export INSTALL_K3S_EXEC="server --server https://${local.dns_apiserver}:6443 --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
         while curl --connect-timeout 0.1 -s https://${local.dns_apiserver}:6443 ; [ $? -eq 28 ] ; do echo "${local.dns_apiserver}:6443 not up, sleeping..."; sleep 5; done
@@ -379,25 +379,25 @@ data "ignition_user" "cp_core" {
   ssh_authorized_keys = var.admin_ssh_authorized_keys
 }
 
-# TODO: only on first cp
+# TODO: cache locally, only on first cp
 data "ignition_file" "calico_operator" {
   count = var.cp_count
   path = "/etc/kubernetes/calico-install/tigera-operator.yaml"
   mode = 420
   source {
     source = "https://docs.projectcalico.org/manifests/tigera-operator.yaml"
-    verification = "sha512-99d8880d925dd3fc89520e13dff36c97d677a82968bfa4037f2af653be1da18c1ce689f1a9cb08280ea96b43605d7b05d110ea70a809d2c3dcc3f04fdd712268"
+    verification = "sha512-d24d1593da6dcbcc4030da49ce7469a4e0bb19552b8c9f0a3f7f9fce4b93eca9d36b0b0a6892e9d72573312583f87f030f8ae4eaaf13c3fad9677909291886c6"
   }
 }
 
-# TODO: only on first cp
+# TODO: cache locally, only on first cp
 data "ignition_file" "calico_resources" {
   count = var.cp_count
   path = "/etc/kubernetes/calico-install/calico-custom-resources.yaml"
   mode = 420
   source {
     source = "https://docs.projectcalico.org/manifests/custom-resources.yaml"
-    verification = "sha512-d01791d8648467126c735581f17a00cfd508102dba09b9c2b0a408423c097557d844f9184a7bb5cc119040567bbe435950630189db309847a1282f59ddecaae7"
+    verification = "sha512-754309af39f218633ca717a4be51d423b2470ff785a083b406ba8f79869a12923e311fa38517622cd6650acc8103b08905e061aa6c8f62efa428f7fffaa91376"
   }
 }
 
@@ -433,7 +433,7 @@ resource "libvirt_ignition" "cp_vm_ignition_config" {
 resource "libvirt_volume" "fcos_base_image" {
   name = "fedora_coreos_stable"
   # TODO: generic
-  source = "../images/fedora-coreos-33.20210301.3.1-qemu.x86_64.qcow2"
+  source = "../images/fedora-coreos-33.20210412.3.0-qemu.x86_64.qcow2"
 }
 
 resource "libvirt_volume" "cp_disk" {
