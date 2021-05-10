@@ -3,3 +3,4 @@ kubectl
 terraform/.terraform*
 terraform/*.tfstate*
 deps/*
+*.swp
