@@ -1,0 +1,4 @@
+# OWNER		REPO			ASSETRE				STREAMRE
+dmacvicar	terraform-provider-libvirt	Fedora_32
+projectcalico	calico			release-			3.19
+k3s-io		k3s			k3s$|k3s-airgap-.*amd64.tar.gz	1.21
