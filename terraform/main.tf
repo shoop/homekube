@@ -41,9 +41,14 @@ variable "virt_network_cidr" {
   default = "192.168.10.0/24"
 }
 
+variable "virt_network_router_address" {
+  type = number
+  default = 1
+}
+
 variable "virt_network_dhcp_endrange" {
-  type = string
-  default = "192.168.10.199"
+  type = number
+  default = 199
 }
 
 # --flannel-backend=vxlan (default)
@@ -120,68 +125,25 @@ variable "admin_ssh_authorized_keys" {
 
 locals {
   dns_apiserver = "apiserver.${var.virt_network_dns_suffix}"
+
+  hosts = concat([ { hostname: "apiserver", ip: 200 } ],
+    [for cnt in range(var.cp_count) : {
+      hostname: format(var.cp_hostname_format, cnt + 1),
+      ip: 200 + cnt + 1
+    }])
 }
 
-resource "libvirt_network" "kubenet" {
-  name = var.virt_network_name
-  mode = var.virt_network_mode
-  bridge = var.virt_network_bridge_name
-  domain = var.virt_network_dns_suffix
-  addresses = [ var.virt_network_cidr ]
-  autostart = true
+module "virt" {
+  source = "./virt"
 
-  dns {
-    enabled = true
-
-    hosts {
-      hostname = "router.${var.virt_network_dns_suffix}"
-      ip = "192.168.10.1"
-    }
-
-    hosts {
-      hostname = local.dns_apiserver
-      ip = var.cp_keepalived_api_vip
-    }
-
-    dynamic "hosts" {
-      for_each = range(var.cp_count)
-      content {
-        hostname = "${format(var.cp_hostname_format, hosts.value + 1)}.${var.virt_network_dns_suffix}"
-        ip = "192.168.10.${format("%d", 200 + hosts.value + 1)}"
-      }
-    }
-  }
-
-  dhcp {
-    enabled = true
-  }
-
-  xml {
-    # Set DHCP end range using XSLT for now
-    # https://github.com/dmacvicar/terraform-provider-libvirt/issues/794
-    xslt = <<-EOXSLT
-      <?xml version="1.0" ?>
-      <xsl:stylesheet version="1.0"
-                      xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
-        <xsl:output omit-xml-declaration="yes" indent="yes"/>
-        <xsl:template match="node()|@*">
-          <xsl:copy>
-            <xsl:apply-templates select="node()|@*"/>
-          </xsl:copy>
-        </xsl:template>
-
-        <xsl:template match="/network/ip/dhcp/range">
-          <xsl:copy>
-            <xsl:attribute name="end">
-              <xsl:value-of select="'${var.virt_network_dhcp_endrange}'" />
-            </xsl:attribute>
-            <xsl:apply-templates select="@*[not(local-name()='end')]|node()"/>
-          </xsl:copy>
-        </xsl:template>
-
-      </xsl:stylesheet>
-    EOXSLT
-  }
+  virt_network_name = var.virt_network_name
+  virt_network_mode = var.virt_network_mode
+  virt_network_bridge_name = var.virt_network_bridge_name
+  virt_network_dns_suffix = var.virt_network_dns_suffix
+  virt_network_cidr = var.virt_network_cidr
+  virt_network_router_address = var.virt_network_router_address
+  virt_network_dhcp_endrange = var.virt_network_dhcp_endrange
+  virt_network_hosts = local.hosts
 }
 
 data "ignition_systemd_unit" "run_k3s_prereq_installer" {
@@ -386,7 +348,7 @@ data "ignition_file" "calico_operator" {
   mode = 420
   source {
     source = "https://docs.projectcalico.org/manifests/tigera-operator.yaml"
-    verification = "sha512-d24d1593da6dcbcc4030da49ce7469a4e0bb19552b8c9f0a3f7f9fce4b93eca9d36b0b0a6892e9d72573312583f87f030f8ae4eaaf13c3fad9677909291886c6"
+    verification = "sha512-4d1591e90ae02437b2190565f2bb6fbd3e0ccf048201f4afc2a3fc0da255421aeb47dfcd11cbbfcefdbaa306a0dcccf3f8ae299f2c80b78529564a71397a9471"
   }
 }
 
@@ -452,7 +414,7 @@ resource "libvirt_domain" "cp_vm" {
     volume_id = libvirt_volume.cp_disk[count.index].id
   }
   network_interface {
-    network_id = libvirt_network.kubenet.id
+    network_id = module.virt.network_id
     hostname = format(var.cp_hostname_format, count.index + 1)
     addresses = [ "192.168.10.${format("%d", 200 + count.index + 1)}" ]
     wait_for_lease = true
