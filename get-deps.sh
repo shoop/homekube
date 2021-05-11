@@ -14,13 +14,13 @@ while read OWNER REPO ASSETRE STREAMRE; do
   if [[ -z "$STREAMRE" ]]; then
     echo "[*] Getting latest release info for ${OWNER}/${REPO}."
     curl -fsLJ https://api.github.com/repos/${OWNER}/${REPO}/releases/latest > release-cache.json
-    RELEASE_NAME=$(jq -r '.name' release-cache.json)
-    RELEASE_ASSETS=$(jq -r ".assets[].browser_download_url | select(test(\"${ASSETRE}\"))" release-cache.json)
+    RELEASE_NAME=$(jq -r ".name" release-cache.json)
+    RELEASE_ASSETS=$(jq -r "if .assets == [] then .tarball_url else .assets[].browser_download_url end|select(test(\"${ASSETRE}\"))" release-cache.json)
   else
     echo "[*] Getting latest release info for stream ${STREAMRE} for ${OWNER}/${REPO}."
     curl -fsLJ https://api.github.com/repos/${OWNER}/${REPO}/releases > release-cache.json
     RELEASE_NAME=$(jq -r "[.[]|select(.name|test(\"${STREAMRE}\"))]|sort_by(.published_at)|reverse|.[0].name" release-cache.json)
-    RELEASE_ASSETS=$(jq -r ".[]|select(.name == \"${RELEASE_NAME}\")|.assets[].browser_download_url | select(test(\"${ASSETRE}\"))" release-cache.json)
+    RELEASE_ASSETS=$(jq -r ".[]|select(.name == \"${RELEASE_NAME}\")|if .assets == [] then .tarball_url else .assets[].browser_download_url end|select(test(\"${ASSETRE}\"))" release-cache.json)
   fi
   if [ -d "${RELEASE_NAME}" ]; then
     echo "[-] Release ${RELEASE_NAME} already cached, skipping."
