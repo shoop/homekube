@@ -55,11 +55,31 @@ else
   echo "[-] Latest Fedora CoreOS release ${RELVER} already cached, skipping."
 fi
 
-## Part 3: External Kubernetes manifests
+## Part 3: External resources
 while read PROJECT NAME URL SHA512; do
   if [[ -z "$PROJECT" || $PROJECT == "#" || $PROJECT == "#*" ]]; then
     continue
   fi
-  echo "[*] Getting Kubernetes manifest ${PROJECT}/${NAME}"
-  #curl -fsLJ -o "${DEPS_DIR}/kubernetes/${PROJECT}/${NAME}" "${URL}"
-done < "${DEPS_DIR}/kubernetes-deps.txt"
+  echo "[*] Getting resource ${PROJECT}/${NAME}"
+  mkdir -p "${DEPS_DIR}/resource/${PROJECT}/${NAME}"
+  NEWNAME="${DEPS_DIR}/resource/${PROJECT}/${NAME}.new"
+  curl -fsLJ -o "${NEWNAME}" "${URL}"
+  SHASUM=$(sha512sum "${NEWNAME}")
+  if [[ ! -f "${DEPS_DIR}/resource/${PROJECT}/${NAME}" ]]; then
+    if [[ "$SHASUM" -ne "$SHA512" ]]; then
+      echo "[*] Resource ${PROJECT}/${NAME} mismatch, SHA512 ${SHASUM}."
+      echo "[=] New version at ${NEWNAME}, please check."
+    else
+      mv "${NEWNAME}" "${DEPS_DIR}/resource/${PROJECT}/${NAME}"
+      echo "[*] Resource ${PROJECT}/${NAME} downloaded."
+    fi
+  else
+    if [[ "$SHASUM" -ne "$SHA512" ]]; then
+      echo "[*] Resource ${PROJECT}/${NAME} changed, SHA512 ${SHASUM}."
+      echo "[=] New version at ${NEWNAME}, please compare."
+    else
+      rm "${NEWNAME}"
+      echo "[-] Resource ${PROJECT}/{$NAME} unchanged."
+    fi
+  fi
+done < "${DEPS_DIR}/resource-deps.txt"
