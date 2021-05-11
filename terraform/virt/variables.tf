@@ -5,17 +5,22 @@ variable "virt_network_name" {
 
 variable "virt_network_mode" {
   type = string
-  default = "route"
+  default = "nat"
+
+  validation {
+    condition = contains(["nat", "none", "route", "bridge"], var.virt_network_mode)
+    error_message = "Valid values for virt_network_mode: nat (default), none, route, bridge."
+  }
 }
 
 variable "virt_network_bridge_name" {
   type = string
-  default = "virbr1"
+  default = null
 }
 
 variable "virt_network_dns_suffix" {
   type = string
-  default = "kube.home"
+  default = ".local"
 }
 
 variable "virt_network_cidr" {
@@ -30,7 +35,7 @@ variable "virt_network_router_address" {
 
 variable "virt_network_dhcp_endrange" {
   type = number
-  default = 199
+  default = 254
 }
 
 variable "virt_network_hosts" {
@@ -40,4 +45,3 @@ variable "virt_network_hosts" {
   }))
   default = []
 }
-
