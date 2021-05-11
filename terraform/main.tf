@@ -312,9 +312,9 @@ data "ignition_file" "cp_run_k3s_installer" {
         export K3S_KUBECONFIG_MODE="644"
         export K3S_TOKEN="very_secret"
         %{ if count.index == 0 ~}
-        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_api_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
+        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_api_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik --disable=servicelb --disable-cloud-controller --disable-network-policy ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
         %{ else ~}
-        export INSTALL_K3S_EXEC="server --server https://${local.dns_apiserver}:6443 --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
+        export INSTALL_K3S_EXEC="server --server https://${local.dns_apiserver}:6443 --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik --disable=servicelb --disable-cloud-controller --disable-network-policy ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
         while curl --connect-timeout 0.1 -s https://${local.dns_apiserver}:6443 ; [ $? -eq 28 ] ; do echo "${local.dns_apiserver}:6443 not up, sleeping..."; sleep 5; done
         echo "${local.dns_apiserver}:6443 up. Avoiding etcd join race..."
         # Sleep a while to avoid 2 etcd learners joining at the same time
