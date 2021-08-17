@@ -22,13 +22,14 @@ while read OWNER REPO ASSETRE STREAMRE; do
     RELEASE_NAME=$(jq -r "[.[]|select(.name|test(\"${STREAMRE}\"))]|sort_by(.published_at)|reverse|.[0].name" release-cache.json)
     RELEASE_ASSETS=$(jq -r ".[]|select(.name == \"${RELEASE_NAME}\")|if .assets == [] then .tarball_url else .assets[].browser_download_url end|select(test(\"${ASSETRE}\"))" release-cache.json)
   fi
-  if [ -d "${RELEASE_NAME}" ]; then
-    echo "[-] Release ${RELEASE_NAME} already cached, skipping."
+  RELEASE_DIR=$(echo $RELEASE_NAME | sed -e 's/^Release //')
+  if [ -d "${RELEASE_DIR}" ]; then
+    echo "[-] Release ${RELEASE_DIR} already cached, skipping."
   else
-    echo "[*] Downloading new release ${RELEASE_NAME}..."
-    mkdir -p "${RELEASE_NAME}"
-    cd "${RELEASE_NAME}"
-    echo "${RELEASE_ASSETS}" | xargs -n 1 -I{} sh -c 'echo {} ; curl -fLJO {}'
+    echo "[*] Downloading new release ${RELEASE_DIR}..."
+    mkdir -p "${RELEASE_DIR}"
+    cd "${RELEASE_DIR}"
+    echo "${RELEASE_ASSETS}" | xargs -I{} sh -c 'curl -vfLJO {}'
     echo "[*] New release for ${OWNER}/${REPO} downloaded."
   fi
 done < "${DEPS_DIR}/github-deps.txt"
@@ -61,10 +62,10 @@ while read PROJECT NAME URL SHA512; do
     continue
   fi
   echo "[*] Getting resource ${PROJECT}/${NAME}"
-  mkdir -p "${DEPS_DIR}/resource/${PROJECT}/${NAME}"
+  mkdir -p "${DEPS_DIR}/resource/${PROJECT}"
   NEWNAME="${DEPS_DIR}/resource/${PROJECT}/${NAME}.new"
   curl -fsLJ -o "${NEWNAME}" "${URL}"
-  SHASUM=$(sha512sum "${NEWNAME}")
+  SHASUM=$(sha512sum "${NEWNAME}" | awk '{print $1}')
   if [[ ! -f "${DEPS_DIR}/resource/${PROJECT}/${NAME}" ]]; then
     if [[ "$SHASUM" -ne "$SHA512" ]]; then
       echo "[*] Resource ${PROJECT}/${NAME} mismatch, SHA512 ${SHASUM}."
