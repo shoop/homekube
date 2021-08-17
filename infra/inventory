@@ -1,2 +1,0 @@
-[dnsservers]
-firsthome	ansible_python_interpreter=auto_silent ansible_host=192.168.178.201 ansible_user=ansible

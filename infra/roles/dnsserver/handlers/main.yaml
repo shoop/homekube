@@ -1,5 +1,0 @@
----
-- name: "DNS | Restart dnsmasq service"
-  systemd:
-    service: home-dnsmasq.service
-    state: restarted

@@ -1,4 +1,0 @@
-- hosts: dnsservers
-  roles:
-    - dnsserver
-  become: yes
