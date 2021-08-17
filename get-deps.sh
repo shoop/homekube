@@ -29,7 +29,7 @@ while read OWNER REPO ASSETRE STREAMRE; do
     echo "[*] Downloading new release ${RELEASE_DIR}..."
     mkdir -p "${RELEASE_DIR}"
     cd "${RELEASE_DIR}"
-    echo "${RELEASE_ASSETS}" | xargs -I{} sh -c 'curl -vfLJO {}'
+    echo "${RELEASE_ASSETS}" | xargs -I{} sh -c 'curl --progress-meter -fLJO {}'
     echo "[*] New release for ${OWNER}/${REPO} downloaded."
   fi
 done < "${DEPS_DIR}/github-deps.txt"
@@ -80,7 +80,7 @@ while read PROJECT NAME URL SHA512; do
       echo "[=] New version at ${NEWNAME}, please compare."
     else
       rm "${NEWNAME}"
-      echo "[-] Resource ${PROJECT}/{$NAME} unchanged."
+      echo "[-] Resource ${PROJECT}/${NAME} unchanged."
     fi
   fi
 done < "${DEPS_DIR}/resource-deps.txt"
