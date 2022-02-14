@@ -1,4 +1,4 @@
 # OWNER		REPO				ASSETRE							STREAMRE
-projectcalico	calico				release-						3.19
-k3s-io		k3s				k3s$|.*amd64.tar.zst|images.txt|sha256sum-amd64.txt	1.21
+projectcalico	calico				release-						3.20
+k3s-io		k3s				k3s$|.*amd64.tar.zst|images.txt|sha256sum-amd64.txt	1.23
 kubernetes-sigs	cluster-proportional-autoscaler	tarball							1.8

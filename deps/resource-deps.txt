@@ -1,2 +1,2 @@
 # PROJ	NAME		URL					SHA512
-k3s	install.sh	https://get.k3s.io			fe11551e4b67201b61b648ec8d1f4b5c1d7c6f23fc7e91ffbdeeb0575dacf28afdfdaa1dab5b364da6338f691d99b2724ebd1aecfe6e61144c8a62ced7d696f6
+k3s	install.sh	https://get.k3s.io			53c307a2b693f0007b2c3daf501e2e51bcfab2de4e51ab133be514be7f09fce74f84e1e947054bde5f8b9ebc26b17acb8f75746cf408d978e3a3c54620b5ed05
