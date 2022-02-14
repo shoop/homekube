@@ -47,6 +47,7 @@ STREAM="stable"
 
 echo "[*] Getting latest release info for Fedora CoreOS stream ${STREAM}."
 JSON_URL="${DEFAULT_BASE_URL}/${STREAM}.json"
+mkdir -p "${DEPS_DIR}/fcos"
 curl -fsLJ -o "${DEPS_DIR}/fcos/stable.json" "${JSON_URL}"
 RELVER=$(jq -r '.architectures.x86_64.artifacts.qemu.release' ${DEPS_DIR}/fcos/stable.json)
 IMAGE="fedora-coreos-${RELVER}-qemu.x86_64.qcow2"
@@ -73,7 +74,7 @@ while read PROJECT NAME URL SHA512; do
   curl -fsLJ -o "${NEWNAME}" "${URL}"
   SHASUM=$(sha512sum "${NEWNAME}" | awk '{print $1}')
   if [[ ! -f "${DEPS_DIR}/resource/${PROJECT}/${NAME}" ]]; then
-    if [[ "$SHASUM" -ne "$SHA512" ]]; then
+    if [[ "$SHASUM" != "$SHA512" ]]; then
       echo "[*] Resource ${PROJECT}/${NAME} mismatch, SHA512 ${SHASUM}."
       echo "[=] New version at ${NEWNAME}, please check."
     else
@@ -81,7 +82,7 @@ while read PROJECT NAME URL SHA512; do
       echo "[*] Resource ${PROJECT}/${NAME} downloaded."
     fi
   else
-    if [[ "$SHASUM" -ne "$SHA512" ]]; then
+    if [[ "$SHASUM" != "$SHA512" ]]; then
       echo "[*] Resource ${PROJECT}/${NAME} changed, SHA512 ${SHASUM}."
       echo "[=] New version at ${NEWNAME}, please compare."
     else
