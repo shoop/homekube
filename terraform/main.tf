@@ -3,7 +3,7 @@ terraform {
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = "0.6.2"
+      version = "0.6.14"
     }
     ignition = {
       source = "community-terraform-providers/ignition"
@@ -33,12 +33,12 @@ variable "virt_network_bridge_name" {
 
 variable "virt_network_dns_suffix" {
   type = string
-  default = "kube.home"
+  default = "svcvm.kzp.home.arpa"
 }
 
 variable "virt_network_cidr" {
   type = string
-  default = "192.168.10.0/24"
+  default = "192.168.110.0/24"
 }
 
 variable "virt_network_router_address" {
@@ -105,7 +105,7 @@ variable "cp_disk_gb" {
 
 variable "cp_keepalived_api_vip" {
   type = string
-  default = "192.168.10.200"
+  default = "192.168.110.230"
   description = "The virtual IP that keepalived will assign to an accessible control plane node"
 }
 
@@ -118,7 +118,7 @@ variable "cp_keepalived_subnet_size" {
 variable "admin_ssh_authorized_keys" {
   type = list(string)
   default = [
-    "ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAQEAnwm807zV8im1zCfY8XJQN/SzldUKCRvIQaR7Lm5WKPvs6wYRgR6l29hcx5U1JGmjQ1hBvfJ9+XPNWAAMrIdWLfAoel1SrlYK91Uc9uylMly7GWhw5BCI5cYqGXzr3GOYVx1mQ9PVH4GQM3USVWpCF9hXBGV4f3q6ezmwBkQeW9zwGmaMpbIQDd7deEGiQ3HhnM4ccCMbzz8NG1Ca9HFANyWVqUL37GCEoQDDQm80uoGxMbWT6UyWFPuXkqrtc5q05XvLhPbCMq4kN846I+ZfKPv8K6SchuVo8xcUOGQkZb1WAvPiRJzTBNknX3gnfH/28GVqWbfXXfCdneuUeJ6u5Q== stijn@kzp.sandcat.nl"
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINIlfYnkJiscuElW4rqbEcvh+u7wsnYBpiUfD9C/yekn stijn@kzp.sandcat.nl"
   ]
   description = "The authorized key(s) for the administrative user(s) of the cluster"
 }
@@ -126,10 +126,10 @@ variable "admin_ssh_authorized_keys" {
 locals {
   dns_apiserver = "apiserver.${var.virt_network_dns_suffix}"
 
-  hosts = concat([ { hostname: "apiserver", ip: 200 } ],
+  hosts = concat([ { hostname: "apiserver", ip: 230 } ],
     [for cnt in range(var.cp_count) : {
       hostname: format(var.cp_hostname_format, cnt + 1),
-      ip: 200 + cnt + 1
+      ip: 230 + cnt + 1
     }])
 }
 
@@ -293,7 +293,7 @@ data "ignition_file" "cp_run_k3s_prereq_installer" {
     content = <<-EOT
       #!/usr/bin/env sh
       main() {
-        rpm-ostree install https://github.com/k3s-io/k3s-selinux/releases/download/v0.3.stable.0/k3s-selinux-0.3-0.el7.noarch.rpm
+        rpm-ostree install https://github.com/k3s-io/k3s-selinux/releases/download/v0.5.stable.1/k3s-selinux-0.5-1.el8.noarch.rpm
         return 0
       }
       main    
@@ -348,7 +348,7 @@ data "ignition_file" "calico_operator" {
   mode = 420
   source {
     source = "https://docs.projectcalico.org/manifests/tigera-operator.yaml"
-    verification = "sha512-4d1591e90ae02437b2190565f2bb6fbd3e0ccf048201f4afc2a3fc0da255421aeb47dfcd11cbbfcefdbaa306a0dcccf3f8ae299f2c80b78529564a71397a9471"
+    verification = "sha512-246b3696df2a4368b7393e4c89c84ec97430c674fef51b6a540ae62e52fff9104c778df4ce7fef476c332041760167ed1a6719a4eb518746b2ff24849cd005f6"
   }
 }
 
@@ -359,7 +359,7 @@ data "ignition_file" "calico_resources" {
   mode = 420
   source {
     source = "https://docs.projectcalico.org/manifests/custom-resources.yaml"
-    verification = "sha512-754309af39f218633ca717a4be51d423b2470ff785a083b406ba8f79869a12923e311fa38517622cd6650acc8103b08905e061aa6c8f62efa428f7fffaa91376"
+    verification = "sha512-a5e34853b2d24caced8e8aa72b5eb849cd2a3623f8e9e648e66dadded5d1ff220849d153ce842832b8355ac40f3ba1f677aed6b0efdedf9a41e35ddb82e13563"
   }
 }
 
@@ -395,7 +395,7 @@ resource "libvirt_ignition" "cp_vm_ignition_config" {
 resource "libvirt_volume" "fcos_base_image" {
   name = "fedora_coreos_stable"
   # TODO: generic
-  source = "../images/fedora-coreos-33.20210412.3.0-qemu.x86_64.qcow2"
+  source = "../deps/fcos/fedora-coreos-35.20220116.3.0-qemu.x86_64.qcow2"
 }
 
 resource "libvirt_volume" "cp_disk" {
@@ -416,7 +416,7 @@ resource "libvirt_domain" "cp_vm" {
   network_interface {
     network_id = module.virt.network_id
     hostname = format(var.cp_hostname_format, count.index + 1)
-    addresses = [ "192.168.10.${format("%d", 200 + count.index + 1)}" ]
+    addresses = [ "192.168.110.${format("%d", 230 + count.index + 1)}" ]
     wait_for_lease = true
   }
   graphics {
