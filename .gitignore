@@ -1,7 +1,8 @@
 images/*
-kubectl
+bin/
 terraform/.terraform*
 terraform/*.tfstate*
 deps/*
 *.swp
 infra/.vaultpassword
+.kubeconfig
