@@ -3,6 +3,12 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 DEPS_DIR="${SCRIPT_DIR}/deps"
 
+## Part 0: Setup
+PODMAN_RUN="podman run"
+if [ -f /run/.toolboxenv ]; then
+  PODMAN_RUN="flatpak-spawn --host podman run --userns=keep-id"
+fi
+
 ## Part 1: Github releases
 
 while read OWNER REPO ASSETRE STREAMRE; do
@@ -46,8 +52,8 @@ RELVER=$(jq -r '.architectures.x86_64.artifacts.qemu.release' ${DEPS_DIR}/fcos/s
 IMAGE="fedora-coreos-${RELVER}-qemu.x86_64.qcow2"
 if [ ! -f "${DEPS_DIR}/fcos/${IMAGE}" ]; then
   echo "[*] Downloading new release ${RELVER}..."
-  podman run -it --pull=always --rm \
-    -v ${DEPS_DIR}/fcos:/data -w /data \
+  ${PODMAN_RUN} -it --pull=always --rm \
+    -v ${DEPS_DIR}/fcos:/data:Z -w /data \
     quay.io/coreos/coreos-installer:release \
       download -s "${STREAM}" -p qemu -f qcow2.xz --decompress
   chcon -t svirt_home_t ${DEPS_DIR}/fcos/*.qcow2
