@@ -103,6 +103,12 @@ variable "cp_disk_gb" {
   description = "The amount of storage in GB to allocate for the control plane VM"
 }
 
+variable "cp_data_disk_gb" {
+  type = number
+  default = 20
+  description = "The amount of storage in GB to allocate for the data disk of the control plane VM"
+}
+
 variable "cp_keepalived_api_vip" {
   type = string
   default = "192.168.110.230"
@@ -312,9 +318,9 @@ data "ignition_file" "cp_run_k3s_installer" {
         export K3S_KUBECONFIG_MODE="644"
         export K3S_TOKEN="very_secret"
         %{ if count.index == 0 ~}
-        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_api_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik --disable=servicelb --disable-cloud-controller --disable-network-policy ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
+        export INSTALL_K3S_EXEC="server --cluster-init --tls-san ${local.dns_apiserver} --tls-san ${var.cp_keepalived_api_vip} --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik --disable=servicelb --disable-cloud-controller ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
         %{ else ~}
-        export INSTALL_K3S_EXEC="server --server https://${local.dns_apiserver}:6443 --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik --disable=servicelb --disable-cloud-controller --disable-network-policy ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
+        export INSTALL_K3S_EXEC="server --server https://${local.dns_apiserver}:6443 --node-name ${format(var.cp_hostname_format, count.index + 1)} --cluster-cidr ${var.cni_cluster_cidr} --disable=traefik --disable=servicelb --disable-cloud-controller ${var.cni_backend_args} --kube-controller-manager-arg=flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
         while curl --connect-timeout 0.1 -s https://${local.dns_apiserver}:6443 ; [ $? -eq 28 ] ; do echo "${local.dns_apiserver}:6443 not up, sleeping..."; sleep 5; done
         echo "${local.dns_apiserver}:6443 up. Avoiding etcd join race..."
         # Sleep a while to avoid 2 etcd learners joining at the same time
@@ -348,7 +354,7 @@ data "ignition_file" "calico_operator" {
   mode = 420
   source {
     source = "https://docs.projectcalico.org/manifests/tigera-operator.yaml"
-    verification = "sha512-246b3696df2a4368b7393e4c89c84ec97430c674fef51b6a540ae62e52fff9104c778df4ce7fef476c332041760167ed1a6719a4eb518746b2ff24849cd005f6"
+    verification = "sha512-51c9089d9ef9f2eb08395de592739052499a151b02d514099966d55cb833d386f7a4f7ee1b56f9ad5a0697614a1a91fce5f6d93550bc8549cd06a871c7cafe2e"
   }
 }
 
@@ -359,8 +365,71 @@ data "ignition_file" "calico_resources" {
   mode = 420
   source {
     source = "https://docs.projectcalico.org/manifests/custom-resources.yaml"
-    verification = "sha512-a5e34853b2d24caced8e8aa72b5eb849cd2a3623f8e9e648e66dadded5d1ff220849d153ce842832b8355ac40f3ba1f677aed6b0efdedf9a41e35ddb82e13563"
+    verification = "sha512-b2545c4015853b438c48d7af1c92de28c3a97e206305a2216732d434c282d1f233a3c9cb5df855fa8448b40d32600ead099ebf881b9d591f03cafc908e5f151c"
   }
+}
+
+data "ignition_disk" "cp_raid_member_1" {
+  count = var.cp_count
+  device = "/dev/vdb"
+  wipe_table = true
+  partition {
+    label = "data1.1"
+    type_guid = "A19D880F-05FC-4D3B-A006-743F0F84911E"
+  }
+}
+
+data "ignition_disk" "cp_raid_member_2" {
+  count = var.cp_count
+  device = "/dev/vdc"
+  wipe_table = true
+  partition {
+    label = "data1.2"
+    type_guid = "A19D880F-05FC-4D3B-A006-743F0F84911E"
+  }
+}
+
+data "ignition_raid" "cp_data" {
+  count = var.cp_count
+  name = "data"
+  level = "raid1"
+  devices = [
+    "/dev/disk/by-partlabel/data1.1",
+    "/dev/disk/by-partlabel/data1.2"
+  ]
+}
+
+data "ignition_filesystem" "cp_var_lib_longhorn" {
+  count = var.cp_count
+  path = "/var/lib/longhorn"
+  device = "/dev/disk/by-id/md-name-any:data"
+  format = "xfs"
+  label = "longhorn"
+  wipe_filesystem = true
+}
+
+data "ignition_systemd_unit" "mount_var_lib_longhorn" {
+  count = var.cp_count
+  name = "var-lib-longhorn.mount"
+  content = <<-EOT
+    [Unit]
+    Description=Longhorn data directory
+
+    [Mount]
+    What=/dev/disk/by-id/md-name-any:data
+    Where=/var/lib/longhorn
+    Type=xfs
+
+    [Install]
+    WantedBy=multi-user.target
+  EOT
+}
+
+# Enable iscsid for longhorn
+data "ignition_systemd_unit" "enable_iscsid" {
+  count = var.cp_count
+  name = "iscsid.service"
+  enabled = true
 }
 
 data "ignition_config" "cp_ignition_config" {
@@ -370,6 +439,8 @@ data "ignition_config" "cp_ignition_config" {
     data.ignition_systemd_unit.run_k3s_installer[count.index].rendered,
     data.ignition_systemd_unit.mask_docker[count.index].rendered,
     data.ignition_systemd_unit.mask_zincati[count.index].rendered,
+    data.ignition_systemd_unit.enable_iscsid[count.index].rendered,
+    data.ignition_systemd_unit.mount_var_lib_longhorn[count.index].rendered,
   ]
   files = [
     data.ignition_file.etc_hostname[count.index].rendered,
@@ -384,25 +455,53 @@ data "ignition_config" "cp_ignition_config" {
   users = [
     data.ignition_user.cp_core.rendered,
   ]
+  disks = [
+    data.ignition_disk.cp_raid_member_1[count.index].rendered,
+    data.ignition_disk.cp_raid_member_2[count.index].rendered
+  ]
+  arrays = [
+    data.ignition_raid.cp_data[count.index].rendered,
+  ]
+  filesystems = [
+    data.ignition_filesystem.cp_var_lib_longhorn[count.index].rendered
+  ]
 }
 
-resource "libvirt_ignition" "cp_vm_ignition_config" {
+#resource "libvirt_ignition" "cp_vm_ignition_config" {
+#  count = var.cp_count
+#  name = "${format(var.cp_hostname_format, count.index + 1)}_ignition_config"
+#  content = data.ignition_config.cp_ignition_config[count.index].rendered
+#}
+
+#resource "libvirt_volume" "fcos_base_image" {
+#  name = "fedora_coreos_stable"
+#  # TODO: generic
+#  source = "../deps/fcos/fedora-coreos-35.20220116.3.0-qemu.x86_64.qcow2"
+#}
+
+resource "local_file" "cp_vm_ignition_config_file" {
   count = var.cp_count
-  name = "${format(var.cp_hostname_format, count.index + 1)}_ignition_config"
+  filename = "ipxe/192.168.110.${format("%d", 230 + count.index + 1)}_ignition_config"
   content = data.ignition_config.cp_ignition_config[count.index].rendered
-}
-
-resource "libvirt_volume" "fcos_base_image" {
-  name = "fedora_coreos_stable"
-  # TODO: generic
-  source = "../deps/fcos/fedora-coreos-35.20220116.3.0-qemu.x86_64.qcow2"
 }
 
 resource "libvirt_volume" "cp_disk" {
   count = var.cp_count
   name = format(var.cp_hostname_format, count.index + 1)
-  base_volume_id = libvirt_volume.fcos_base_image.id
+  #base_volume_id = libvirt_volume.fcos_base_image.id
   size = var.cp_disk_gb * 1024 * 1024 * 1024
+}
+
+resource "libvirt_volume" "data_disk_1" {
+  count = var.cp_count
+  name = format("%s_data_1", format(var.cp_hostname_format, count.index + 1))
+  size = var.cp_data_disk_gb * 1024 * 1024 * 1024
+}
+
+resource "libvirt_volume" "data_disk_2" {
+  count = var.cp_count
+  name = format("%s_data_2", format(var.cp_hostname_format, count.index + 1))
+  size = var.cp_data_disk_gb * 1024 * 1024 * 1024
 }
 
 resource "libvirt_domain" "cp_vm" {
@@ -412,6 +511,12 @@ resource "libvirt_domain" "cp_vm" {
   memory = var.cp_ram_mb
   disk {
     volume_id = libvirt_volume.cp_disk[count.index].id
+  }
+  disk {
+    volume_id = libvirt_volume.data_disk_1[count.index].id
+  }
+  disk {
+    volume_id = libvirt_volume.data_disk_2[count.index].id
   }
   network_interface {
     network_id = module.virt.network_id
@@ -426,7 +531,33 @@ resource "libvirt_domain" "cp_vm" {
     type = "pty"
     target_port = "0"
   }
-  coreos_ignition = libvirt_ignition.cp_vm_ignition_config[count.index].id
+  boot_device {
+    dev = [ "hd", "network" ]
+  }
+  #coreos_ignition = libvirt_ignition.cp_vm_ignition_config[count.index].id
+
+  # Enable BIOS serial console
+  xml {
+    xslt = <<EOL
+      <?xml version="1.0" ?>
+      <xsl:stylesheet version="1.0"
+          xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+          <!-- Identity template -->
+          <xsl:template match="@* | node()">
+              <xsl:copy>
+                  <xsl:apply-templates select="@* | node()"/>
+              </xsl:copy>
+          </xsl:template>
+          <!-- Override for target element -->
+          <xsl:template match="os">
+              <xsl:copy>
+                  <xsl:apply-templates select="@* | node()"/>
+                  <bios useserial="yes"/>
+              </xsl:copy>
+          </xsl:template>
+      </xsl:stylesheet>
+    EOL
+  }
 }
 
 output "cp_ips" {

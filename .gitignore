@@ -6,3 +6,4 @@ deps/*
 *.swp
 infra/.vaultpassword
 .kubeconfig
+terraform/ipxe/*

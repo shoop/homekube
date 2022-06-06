@@ -1,0 +1,8 @@
+DEFAULT fcos
+TIMEOUT 20
+PROMPT 0
+LABEL fcos
+    KERNEL fedora-coreos-35.20220213.3.0-live-kernel-x86_64
+    APPEND initrd=fedora-coreos-35.20220213.3.0-live-initramfs.x86_64.img,fedora-coreos-35.20220213.3.0-live-rootfs.x86_64.img console=ttyS0 coreos.inst.install_dev=/dev/vda
+IPAPPEND 2
+

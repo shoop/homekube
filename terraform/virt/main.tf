@@ -58,6 +58,7 @@ resource "libvirt_network" "kubenet" {
             </xsl:attribute>
             <xsl:apply-templates select="@*[not(local-name()='end')]|node()"/>
           </xsl:copy>
+          <bootp file="http://192.168.10.41:8000/install.ipxe" />
         </xsl:template>
 
       </xsl:stylesheet>
