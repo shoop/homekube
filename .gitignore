@@ -7,3 +7,5 @@ deps/*
 infra/.vaultpassword
 .kubeconfig
 terraform/ipxe/*
+*.drawio.bkp
+*.drawio.dtmp
