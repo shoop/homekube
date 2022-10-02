@@ -1,0 +1,11 @@
+config:
+  linear:
+    coresPerReplica: 1
+    nodesPerReplica: 1
+    min: 1
+    max: 6
+    preventSinglePointFailure: true
+    includeUnschedulableNodes: true
+options:
+  namespace: kube-system
+  target: deployment/coredns
