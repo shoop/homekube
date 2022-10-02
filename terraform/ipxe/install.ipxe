@@ -1,4 +1,0 @@
-#!ipxe
-kernel fedora-coreos-35.20220213.3.0-live-kernel-x86_64 console=ttyS0 initrd=main coreos.live.rootfs_url=http://${next-server}:8000/fedora-coreos-35.20220213.3.0-live-rootfs.x86_64.img coreos.inst.install_dev=/dev/vda ignition.platform.id=qemu coreos.inst.ignition_url=http://${next-server}:8000/${net0/ip}_ignition_config
-initrd --name main fedora-coreos-35.20220213.3.0-live-initramfs.x86_64.img
-boot
