@@ -1,0 +1,32 @@
+variant: fcos
+version: 1.4.0
+ignition:
+  config:
+    merge:
+      - local: "node-install.ign"
+storage:
+  files:
+    - path: /etc/hostname
+      mode: 0644
+      contents:
+        inline: node2.svc.kzp.home.arpa
+
+    - path: /etc/kubernetes/local
+      mode: 0644
+      contents:
+        inline: |-
+          NODE_NUMBER=2
+          APISERVER=apiserver.svc.kzp.home.arpa
+          APISERVER_IP=192.168.40.40
+
+    # TODO: change this to fleet_lock once we can confirm that it will run at cluster init
+    - path: /etc/zincati/config.d/90-update-strategy.toml
+      mode: 0420
+      contents:
+        inline: |-
+          [updates]
+          strategy = "periodic"
+          [[updates.periodic.window]]
+          days = [ "Tue" ]
+          start_time = "04:00"
+          length_minutes = 60

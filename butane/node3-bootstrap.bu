@@ -1,0 +1,12 @@
+variant: fcos
+version: 1.4.0
+ignition:
+  config:
+    merge:
+      - local: "node3-install.ign"
+storage:
+  files:
+    - path: /etc/kubernetes/bootstrap
+      mode: 0644
+      contents:
+        inline: true

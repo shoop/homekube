@@ -1,0 +1,10 @@
+#!ipxe
+
+set VERSION 36.20220820.3.0
+set INSTALLDEV /dev/sda
+set BASEURL http://192.168.10.41:8000
+
+kernel ${BASEURL}/fedora-coreos-${VERSION}-live-kernel-x86_64 initrd=main coreos.live.rootfs_url=${BASEURL}/fedora-coreos-${VERSION}-live-rootfs.x86_64.img coreos.inst.install_dev=${INSTALLDEV} coreos.inst.ignition_url=${BASEURL}/config-${ip}.ign
+initrd --name main ${BASEURL}/fedora-coreos-${VERSION}-live-initramfs.x86_64.img
+
+boot
