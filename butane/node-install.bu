@@ -1,0 +1,196 @@
+variant: fcos
+version: 1.4.0
+storage:
+  disks:
+    - device: /dev/sdb
+      wipe_table: true
+      partitions:
+        - label: data-0
+    - device: /dev/sdc
+      wipe_table: true
+      partitions:
+        - label: data-1
+  filesystems:
+    - device: /dev/disk/by-partlabel/data-0
+      path: /var/mnt/data
+      label: data
+      format: xfs
+      wipe_filesystem: true
+      with_mount_unit: true
+  files:
+    - path: /etc/kubernetes/keepalived-api-vip/keepalived-api-vip.yaml
+      mode: 0644
+      contents:
+        inline: |-
+          apiVersion: helm.cattle.io/v1
+          kind: HelmChart
+          metadata:
+            name: keepalived-api-vip
+            namespace: kube-system
+          spec:
+            chart: keepalived-ingress-vip
+            version: v0.1.6
+            repo: https://janeczku.github.io/helm-charts/
+            targetNamespace: kube-system
+            valuesContent: |-
+              keepalived:
+                vrrpInterfaceName: eno1
+                vipInterfaceName: eno1
+                vipAddressCidr: 'APISERVER_IP'
+                checkServiceUrl: https://127.0.0.1:6443/healthz
+                checkKubelet: false
+                checkKubeApi: false
+              kind: Daemonset
+              pod:
+                nodeSelector:
+                  node-role.kubernetes.io/master: "true"
+
+    - path: /usr/local/bin/run-k3s-prereq-installer
+      mode: 0755
+      contents:
+        inline: |-
+          #!/usr/bin/env sh
+          main() {
+            rpm-ostree install https://github.com/k3s-io/k3s-selinux/releases/download/v1.2.stable.2/k3s-selinux-1.2-2.el8.noarch.rpm
+            return 0
+          }
+          main
+
+    - path: /etc/rancher/k3s/config.yaml
+      mode: 0755
+      contents:
+        inline: |-
+          # TODO: change to true. As of 20221002 tigera-operator does not deal with SELinux properly.
+          #       Symptoms:
+          # $ kubectl get pods -n tigera-operator
+          # NAME                               READY   STATUS             RESTARTS      AGE
+          # tigera-operator-6bb888d6fc-6s4lt   0/1     CrashLoopBackOff   4 (77s ago)   2m56s
+          # $ kubectl logs -n tigera-operator tigera-operator-6bb888d6fc-6s4lt
+          # operator: error while loading shared libraries: libpthread.so.0: cannot change memory protections
+          # $ journalctl -b | grep -i avc | head -n 1
+          # Oct 02 11:31:51 node1.svc.kzp.home.arpa audit[1666]: AVC avc:  denied  { read } for  pid=1666 comm="operator" path="/lib64/libpthread.so.0" dev="sda4" ino=201326722 scontext=system_u:system_r:container_t:s0:c154,c980 tcontext=system_u:object_r:var_lib_t:s0 tclass=file permissive=0
+          selinux: false
+          write-kubeconfig-mode: "0644"
+          cluster-cidr: "10.42.0.0/16"
+          service-cidr: "10.43.0.0/16"
+          disable:
+            - "traefik"
+            - "servicelb"
+          disable-cloud-controller: true
+          disable-network-policy: true
+          flannel-backend: "none"
+          default-local-storage-path: "/var/mnt/data/localstorage"
+          kube-controller-manager-arg:
+            - "flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
+
+    - path: /usr/local/bin/run-k3s-installer
+      mode: 0755
+      contents:
+        inline: |-
+          #!/usr/bin/env sh
+          set -x
+          main() {
+            export K3S_TOKEN="very_secret"
+            export K3S_NODE_NAME=$(hostname)
+            . /etc/kubernetes/local
+            [ -z "${NODE_NUMBER}" ] && NODE_NUMBER=1
+            DEFAULT_K3S_EXEC="--tls-san ${APISERVER} --tls-san ${APISERVER_IP}"
+            if [ -f /etc/kubernetes/bootstrap ] && [ "$(cat /etc/kubernetes/bootstrap)" == "true" ]; then
+              export INSTALL_K3S_EXEC="server --cluster-init ${DEFAULT_K3S_EXEC}"
+            else
+              export INSTALL_K3S_EXEC="server --server https://${APISERVER}:6443 ${DEFAULT_K3S_EXEC}"
+              while curl --connect-timeout 0.1 -s https://${APISERVER}:6443 ; [ $? -eq 28 ] ; do echo "${APISERVER}:6443 not up, sleeping..."; sleep 5; done
+              echo "${APISERVER}:6443 up. Waiting to avoid etcd join race..."
+              sleep $(( NODE_NUMBER * 25 ))
+            fi
+            sed -i -e 's#cidr: .*#cidr: 10.42.0.0/16#' -e '/ipPools:/i \ \ \ \ containerIPForwarding: Enabled' -e '/calicoNetwork:/i \ \ flexVolumePath: /etc/kubernetes/kubelet-plugins/volume/exec' /etc/kubernetes/calico-install/calico-custom-resources.yaml
+            mkdir -p /var/lib/rancher/k3s/server/manifests
+            if [ -f /etc/kubernetes/bootstrap ] && [ "$(cat /etc/kubernetes/bootstrap)" == "true" ]; then
+              cp /etc/kubernetes/calico-install/tigera-operator.yaml /var/lib/rancher/k3s/server/manifests/00-tigera-operator.yaml
+              cp /etc/kubernetes/calico-install/calico-custom-resources.yaml /var/lib/rancher/k3s/server/manifests/99-calico-custom-resources.yaml
+            fi
+            sed -i -e "s#vipAddressCidr: .*#vipAddressCidr: '${APISERVER_IP}/24'#" /etc/kubernetes/keepalived-api-vip/keepalived-api-vip.yaml
+            cp /etc/kubernetes/keepalived-api-vip/keepalived-api-vip.yaml /var/lib/rancher/k3s/server/manifests/keepalived-api-vip.yaml
+            echo "Starting k3s install..."
+            curl -sfL https://get.k3s.io | sh -
+            return 0 
+          }
+          main
+
+    - path: /etc/kubernetes/calico-install/tigera-operator.yaml
+      mode: 0644
+      contents:
+        source: https://docs.projectcalico.org/manifests/tigera-operator.yaml
+        verification:
+          hash: sha512-cf49f6d0cbcdc805e43db548ea509e97e356fb6cdcbc568188b121a5aa949d5697577417335cc196c8c7d5d0ae1d3f846be1c86549627eeed6213feb0e33091f
+
+    - path: /etc/kubernetes/calico-install/calico-custom-resources.yaml
+      mode: 0644
+      contents:
+        source: https://docs.projectcalico.org/manifests/custom-resources.yaml
+        verification:
+          hash: sha512-3e220c6b7c063f1dc354b2fb4c580ec64635eaf7ccb8790e188553343b93ef67fdd0375cff1c1ccedb9da08d446d6a2ad609e8042ffb8f1a656b6602932ed71f
+
+systemd:
+  units:
+    - name: run-k3s-prereq-installer.service
+      enabled: true
+      contents: |-
+        [Unit]
+        After=network-online.target
+        Wants=network-online.target
+        Before=systemd-user-sessions.service
+        OnFailure=emergency.target
+        OnFailureJobMode=replace-irreversibly
+        ConditionPathExists=!/var/lib/k3s-prereq-installed
+        [Service]
+        RemainAfterExit=yes
+        Type=oneshot
+        ExecStart=/usr/local/bin/run-k3s-prereq-installer
+        ExecStartPost=/usr/bin/touch /var/lib/k3s-prereq-installed
+        ExecStartPost=/usr/bin/systemctl --no-block reboot 
+        StandardOutput=kmsg+console
+        StandardError=kmsg+console
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: run-k3s-installer.service
+      enabled: true
+      contents: |-
+        [Unit]
+        After=network-online.target
+        Wants=network-online.target
+        Before=systemd-user-sessions.service
+        OnFailure=emergency.target
+        OnFailureJobMode=replace-irreversibly
+        ConditionPathExists=/var/lib/k3s-prereq-installed
+        ConditionPathExists=!/var/lib/k3s-installed
+        [Service]
+        RemainAfterExit=yes
+        Type=oneshot
+        ExecStart=/usr/local/bin/run-k3s-installer
+        ExecStartPost=/usr/bin/touch /var/lib/k3s-installed
+        StandardOutput=kmsg+console
+        StandardError=kmsg+console
+        [Install]
+        WantedBy=multi-user.target
+
+    # Mask docker to avoid it inserting iptables chains in the middle.
+    - name: docker.service
+      enabled: false
+      mask: true
+
+    # Mask zincati for now as we cannot control timing of new image staging.
+    - name: zincati.service
+      enabled: false
+      mask: true
+
+    # Enable iscsid for longhorn
+    - name: iscsid.service
+      enabled: true
+
+passwd:
+  users:
+    - name: core
+      ssh_authorized_keys:
+        - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINIlfYnkJiscuElW4rqbEcvh+u7wsnYBpiUfD9C/yekn stijn@kzp.sandcat.nl

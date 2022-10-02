@@ -9,3 +9,4 @@ infra/.vaultpassword
 terraform/ipxe/*
 *.drawio.bkp
 *.drawio.dtmp
+butane/*.ign
