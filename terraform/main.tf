@@ -354,7 +354,7 @@ data "ignition_file" "calico_operator" {
   mode = 420
   source {
     source = "https://docs.projectcalico.org/manifests/tigera-operator.yaml"
-    verification = "sha512-51c9089d9ef9f2eb08395de592739052499a151b02d514099966d55cb833d386f7a4f7ee1b56f9ad5a0697614a1a91fce5f6d93550bc8549cd06a871c7cafe2e"
+    verification = "sha512-cf49f6d0cbcdc805e43db548ea509e97e356fb6cdcbc568188b121a5aa949d5697577417335cc196c8c7d5d0ae1d3f846be1c86549627eeed6213feb0e33091f"
   }
 }
 
@@ -365,7 +365,7 @@ data "ignition_file" "calico_resources" {
   mode = 420
   source {
     source = "https://docs.projectcalico.org/manifests/custom-resources.yaml"
-    verification = "sha512-b2545c4015853b438c48d7af1c92de28c3a97e206305a2216732d434c282d1f233a3c9cb5df855fa8448b40d32600ead099ebf881b9d591f03cafc908e5f151c"
+    verification = "sha512-3e220c6b7c063f1dc354b2fb4c580ec64635eaf7ccb8790e188553343b93ef67fdd0375cff1c1ccedb9da08d446d6a2ad609e8042ffb8f1a656b6602932ed71f"
   }
 }
 
