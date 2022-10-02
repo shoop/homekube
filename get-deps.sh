@@ -58,6 +58,10 @@ if [ ! -f "${DEPS_DIR}/fcos/${IMAGE}" ]; then
     quay.io/coreos/coreos-installer:release \
       download -s "${STREAM}" -p qemu -f qcow2.xz --decompress
   chcon -t svirt_home_t ${DEPS_DIR}/fcos/*.qcow2
+  ${PODMAN_RUN} -it --pull=always --rm \
+    -v ${DEPS_DIR}/fcos:/data:Z -w /data \
+    quay.io/coreos/coreos-installer:release \
+      download -s "${STREAM}" -f pxe
   echo "[*] New Fedora CoreOS release ${RELVER} downloaded."
 else
   echo "[-] Latest Fedora CoreOS release ${RELVER} already cached, skipping."
