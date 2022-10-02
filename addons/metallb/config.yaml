@@ -9,6 +9,6 @@ data:
     - name: kubehome
       protocol: layer2
       addresses:
-      - 192.168.10.10-192.168.10.199
+      - 192.168.110.10-192.168.110.199
       avoid-buggy-ips: true
       auto-assign: true
